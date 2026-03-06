@@ -25,19 +25,27 @@ jobs:
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=YES
+
+      - name: Ad-hoc codesign
+        run: |
+          APP_PATH="build/Build/Products/Release/cpumonitor.app"
+          # Remove quarantine and extended attributes
+          xattr -cr "$APP_PATH"
+          # Ad-hoc codesign with deep signing
+          codesign --force --deep --sign - "$APP_PATH"
+          # Verify
+          codesign --verify --verbose "$APP_PATH"
 
       - name: Create DMG
         run: |
           APP_PATH="build/Build/Products/Release/cpumonitor.app"
           DMG_NAME="cpumonitor-${GITHUB_REF_NAME}.dmg"
 
-          # Create temporary directory for DMG contents
           mkdir -p dmg_contents
           cp -R "$APP_PATH" dmg_contents/
           ln -s /Applications dmg_contents/Applications
 
-          # Create DMG
           hdiutil create -volname "CPU Monitor" \
             -srcfolder dmg_contents \
             -ov -format UDZO \
