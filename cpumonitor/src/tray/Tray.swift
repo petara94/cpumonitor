@@ -1,6 +1,6 @@
 //
-//  AppDelegate.swift
-//  solyanka
+//  Tray.swift
+//  cpumonitor
 //
 //  Created by petr_ivanov1 on 12.02.2025.
 //
@@ -15,20 +15,23 @@ class TrayBar: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var popover: NSPopover!
     var timer: Timer?
-    var cpuScanner: CpuScaner = CpuScaner()
+    var cpuScanner: CpuScanner = CpuScanner()
     var settingsWindow: NSWindow?
     var settingsCancellable: AnyCancellable?
     @AppStorage("cpuUpdateInterval") var cpuUpdateInterval: Double = 0.25
     private var lastInterval: Double = 0.25
-    
+
+    private static let settingsWindowWidth: CGFloat = 340
+    private static let settingsWindowHeight: CGFloat = 180
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Создаем иконку в трее
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength) //CGFloat(24))
-        
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
         if let button = statusItem.button {
             button.action = #selector(togglePopover(_:))
         }
-        
+
         // Запускаем таймер для обновления изображения
         startTimer()
         // Глобальный shortcut Cmd+,
@@ -52,14 +55,21 @@ class TrayBar: NSObject, NSApplicationDelegate {
             }
         // Создаем popover с SwiftUI-вью
         popover = NSPopover()
-        let contentView = ContentView() // Ваше SwiftUI-вью
+        let contentView = ContentView()
         popover.contentViewController = NSHostingController(rootView: contentView)
-        popover.behavior = .transient // Popover автоматически закрывается при клике вне его
-        
+        popover.behavior = .transient
+
         // Добавляем меню в трей
         constructMenu()
+
+        // Подписки на sleep/wake
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(self, selector: #selector(handleSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWake), name: NSWorkspace.didWakeNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleSleep), name: NSWorkspace.screensDidSleepNotification, object: nil)
+        workspaceCenter.addObserver(self, selector: #selector(handleWake), name: NSWorkspace.screensDidWakeNotification, object: nil)
     }
-    
+
     func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: cpuUpdateInterval, repeats: true) { [weak self] _ in
@@ -67,7 +77,19 @@ class TrayBar: NSObject, NSApplicationDelegate {
         }
         lastInterval = cpuUpdateInterval
     }
-    
+
+    @objc func handleSleep() {
+        timer?.invalidate()
+        timer = nil
+        print("[cpumonitor] Timer stopped (sleep/screen off)")
+    }
+
+    @objc func handleWake() {
+        cpuScanner.resetLastLoads()
+        startTimer()
+        print("[cpumonitor] Timer restarted (wake/screen on)")
+    }
+
     @objc func togglePopover(_ sender: Any?) {
         print("toggle called")
         if let button = statusItem.button {
@@ -78,25 +100,25 @@ class TrayBar: NSObject, NSApplicationDelegate {
             }
         }
     }
-    
+
     func constructMenu() {
         let menu = NSMenu()
-        
+
         menu.addItem(NSMenuItem(title: "Open", action: #selector(openMainWindow(_:)), keyEquivalent: "O"))
         menu.addItem(NSMenuItem(title: "Settings", action: #selector(openSettingsWindow(_:)), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        
+
         statusItem.menu = menu
     }
-    
+
     @objc func openMainWindow(_ sender: Any?) {
         if let window = NSApplication.shared.windows.first {
             window.makeKeyAndOrderFront(sender)
             NSApp.activate(ignoringOtherApps: true)
         }
     }
-    
+
     @objc func openSettingsWindow(_ sender: Any?) {
         if settingsWindow == nil {
             let settingsView = SettingsView()
@@ -104,7 +126,7 @@ class TrayBar: NSObject, NSApplicationDelegate {
             let window = NSWindow(contentViewController: hostingController)
             window.title = "Настройки"
             window.styleMask = [.titled, .closable, .miniaturizable]
-            window.setContentSize(NSSize(width: 340, height: 180))
+            window.setContentSize(NSSize(width: Self.settingsWindowWidth, height: Self.settingsWindowHeight))
             window.isReleasedWhenClosed = false
             window.center()
             window.level = .floating
@@ -117,17 +139,16 @@ class TrayBar: NSObject, NSApplicationDelegate {
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-    
-    // Функция для обновления иконки в трее
+
     func updateTrayIcon() {
         if let button = statusItem.button {
-            button.image = NSImage.cpuLoadFromArray(cpuScanner.ScanCpuDiffs().map({$0.Percent()}))
+            button.image = NSImage.cpuLoadFromArray(cpuScanner.scanCpuDiffs().map({ $0.percent() }))
         }
     }
-    
+
     func applicationWillTerminate(_ aNotification: Notification) {
-        // Останавливаем таймер
         timer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 }
 
@@ -135,56 +156,6 @@ extension TrayBar: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let window = notification.object as? NSWindow, window == settingsWindow {
             settingsWindow = nil
-        }
-    }
-}
-
-extension NSImage {
-    static func cpuLoadFromArray(_ array: [UInt8]) -> NSImage {
-        let width = 5
-        let padding = 1
-        let columnWidth = CGFloat(width)
-        let columnHeight = CGFloat(32)
-        let size = NSSize(width: (width+padding)*array.count, height: 32) // Размер изображения
-        let image = NSImage(size: size)
-        
-        image.lockFocus()
-        
-        NSColor.clear.set()
-        NSRect(origin: .zero, size: size).fill()
-        
-        for (i, value) in array.enumerated() {
-            let barHeight: CGFloat = CGFloat(value) * columnHeight / CGFloat(100) - CGFloat(1)
-            
-            let columnRect = NSRect(
-                x: CGFloat(i) * (columnWidth + CGFloat(padding)),
-                y: 1,
-                width: columnWidth,
-                height: barHeight < 5 ? 5 : barHeight
-            )
-            NSColor.colorFromCPULoad(value).setFill()
-            columnRect.fill()
-        }
-        
-        image.unlockFocus()
-        
-        return image
-    }
-}
-
-extension NSColor {
-    static func colorFromCPULoad(_ load: UInt8) -> NSColor {
-        switch load {
-        case 0..<25:
-            return NSColor.systemGreen
-        case 25..<50:
-            return NSColor.systemYellow
-        case 50..<80:
-            return NSColor.systemOrange
-        case 80...100:
-            return NSColor.systemRed
-        default:
-            return NSColor.systemGray
         }
     }
 }
