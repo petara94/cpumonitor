@@ -142,7 +142,9 @@ class TrayBar: NSObject, NSApplicationDelegate {
 
     func updateTrayIcon() {
         if let button = statusItem.button {
-            button.image = NSImage.cpuLoadFromArray(cpuScanner.scanCpuDiffs().map({ $0.percent() }))
+            let cpuImage = NSImage.cpuLoadFromArray(cpuScanner.scanCpuDiffs().map({ $0.percent() }))
+            let memImage = NSImage.memoryLoadImage(MemoryScanner.scan())
+            button.image = NSImage.combinedTrayIcon(cpu: cpuImage, memory: memImage)
         }
     }
 

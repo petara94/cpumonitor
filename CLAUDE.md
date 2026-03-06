@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Commits
+
+- Автор коммитов: `petara94 <petara94@mail.ru>` — всегда используй `--author="petara94 <petara94@mail.ru>"` при создании коммитов.
+
 ## Project Overview
 
 macOS menu bar (tray) app that displays per-core CPU load as colored bar columns. Built with Swift/SwiftUI, requires macOS 13.5+.

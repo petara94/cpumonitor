@@ -76,4 +76,27 @@ struct cpumonitorTests {
     @Test func colorGrayForOverflow() {
         #expect(NSColor.colorFromCPULoad(101) == NSColor.systemGray)
     }
+
+    // MARK: - MemoryScanner
+
+    @Test func memoryScanReturnsPositiveTotal() {
+        let mem = MemoryScanner.scan()
+        #expect(mem.totalMemory > 0)
+    }
+
+    @Test func memoryUsedPercentInRange() {
+        let mem = MemoryScanner.scan()
+        #expect(mem.usedPercent >= 0 && mem.usedPercent <= 100)
+    }
+
+    @Test func memoryGigabytesConversion() {
+        let mem = MemoryUsage(
+            appMemory: 1_073_741_824,
+            wiredMemory: 0,
+            compressedMemory: 0,
+            freeMemory: 0,
+            totalMemory: 1_073_741_824
+        )
+        #expect(abs(mem.gigabytes(mem.appMemory) - 1.0) < 0.001)
+    }
 }
